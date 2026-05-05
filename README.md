@@ -142,7 +142,7 @@ Username: administrator
 # 3. Enter credentials
 Username: administrator
 Password: Password123!
-Domain: wowza.local
+Domain: corp.local
 
 # 4. Select options to run
 # 5. Press 0 to exit → reports auto-generated in ./reports/
@@ -174,7 +174,6 @@ BigBlack-NXC/
 ## 👤 Author
 
 **Sabastiaz** — Red Team Sorcerer
-- Site: https://sabastiaz.netlify.app/
 - GitHub: [@sabastiaz](https://github.com/sabastiaz)
 - Blog: [medium.com/@sabastiaz](https://medium.com/@sabastiaz)
 

