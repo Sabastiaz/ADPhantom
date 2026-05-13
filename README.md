@@ -175,7 +175,7 @@ ADPhantom/
 
 **Sabastiaz** — Red Team Sorcerer
 - GitHub: [@sabastiaz](https://github.com/sabastiaz)
-- Blog: [https://sabastiaz.github.io/writings.html)
+- Blog: https://sabastiaz.github.io/writings.html
 
 ---
 
