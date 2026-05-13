@@ -1,4 +1,4 @@
-# 🔐 ADPhantom — NetExec Ultimate Interactive Tool
+# ADPhantom — NetExec Ultimate Interactive Tool
 
 
 > An interactive Bash wrapper for [NetExec (nxc)](https://github.com/Pennyw0rth/NetExec) — designed to streamline credential gathering and network enumeration during red team engagements and penetration tests.
