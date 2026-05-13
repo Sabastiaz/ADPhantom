@@ -3,7 +3,7 @@
 
 > An interactive Bash wrapper for [NetExec (nxc)](https://github.com/Pennyw0rth/NetExec) — designed to streamline credential gathering and network enumeration during red team engagements and penetration tests.
 
-<img width="1254" height="1254" alt="ADphantompic" src="https://github.com/user-attachments/assets/a6e4714d-2863-4f8e-8272-0df1ec193ed2" />
+<img width="1402" height="1122" alt="ADPhantom2" src="https://github.com/user-attachments/assets/fc904cc5-905e-4cdc-a709-853928b53395" />
 
 
 ![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
