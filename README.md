@@ -1,4 +1,4 @@
-# 🔐 BigBlack NXC — NetExec Ultimate Interactive Tool
+# 🔐 ADPhantom — NetExec Ultimate Interactive Tool
 
 > An interactive Bash wrapper for [NetExec (nxc)](https://github.com/Pennyw0rth/NetExec) — designed to streamline credential gathering and network enumeration during red team engagements and penetration tests.
 
@@ -79,9 +79,9 @@ pipx install netexec
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/sabastiaz/BigBlack-NXC.git
-cd BigBlack-NXC
-chmod +x nxcbb.sh
+git clone https://github.com/sabastiaz/ADPhantom.git
+cd ADPhantom
+chmod +x adphantom.sh
 ```
 
 ---
@@ -89,7 +89,7 @@ chmod +x nxcbb.sh
 ## 🎮 Usage
 
 ```bash
-./nxcbb.sh
+./adphantom.sh
 ```
 
 The script will prompt you for:
@@ -101,7 +101,7 @@ Then presents an interactive menu:
 
 ```
 ╔════════════════════════════════════════╗
-║     BigBlack NXC Ultimate Tool        ║
+║     ADPhantom Ultimate Tool        ║
 ║     Credential & Enumeration Master   ║
 ╚════════════════════════════════════════╝
 
@@ -134,7 +134,7 @@ Username: administrator
 
 ```bash
 # 1. Start the tool
-./nxcbb.sh
+./adphantom.sh
 
 # 2. Enter target
 > 192.168.56.10
@@ -159,8 +159,8 @@ The tool saves your last-used target and username to `~/.netexec_config` for qui
 ## 📁 Project Structure
 
 ```
-BigBlack-NXC/
-├── nxcbb.sh          # Main interactive script
+ADPhantom/
+├── adphantom.sh          # Main interactive script
 ├── tool_review.html  # Static code analysis report
 ├── reports/          # Auto-generated session reports (git ignored)
 │   ├── session_*.log
