@@ -13,6 +13,9 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Global stop flag — Ctrl+C แล้วเลือก q จะ set เป็น 1
+_STOP_ALL=0
+
 # Configuration file to save settings
 CONFIG_FILE="$HOME/.netexec_config"
 
@@ -37,6 +40,9 @@ nxcrun() {
     echo "" >> "$LOG_FILE"
     echo "[$(date '+%H:%M:%S')] CMD: netexec $*" >> "$LOG_FILE"
 
+    # ถ้ามีการสั่ง stop แล้ว ข้ามทุก command ไปเลย
+    [ $_STOP_ALL -eq 1 ] && return 0
+
     while true; do
         _SIGINT_CAUGHT=0
         trap '_SIGINT_CAUGHT=1' INT
@@ -45,25 +51,17 @@ nxcrun() {
 
         [ $_SIGINT_CAUGHT -eq 0 ] && break
 
-        echo -e "\n\n${YELLOW}[!] Command ถูก interrupt (Ctrl+C)${NC}"
-        echo -e "  ${CYAN}r${NC} = รันใหม่อีกครั้ง"
-        echo -e "  ${CYAN}s / Enter${NC} = ข้าม step นี้ไป step ถัดไป"
-        echo -e "  ${CYAN}q${NC} = ออกโปรแกรม (บันทึก report)"
+        echo -e "\n\n${YELLOW}[!] Interrupted (Ctrl+C)${NC}"
+        echo -e "  ${CYAN}r${NC}        = รันใหม่อีกครั้ง"
+        echo -e "  ${CYAN}Enter / s${NC} = ข้ามไป step ถัดไป"
+        echo -e "  ${CYAN}q${NC}        = หยุดตรงนี้และ run BloodHound เดี๋ยวนี้เลย"
         read -p "  เลือก: " _int_choice
         case "$_int_choice" in
             r|R) echo -e "${CYAN}[*] Retrying...${NC}" ;;
-            q|Q) generate_report; echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
+            q|Q) _STOP_ALL=1; return 0 ;;
             *)   return 0 ;;
         esac
     done
-}
-
-# Ask user to skip a step; returns 0 if skipping, 1 if running
-ask_skip() {
-    local description="$1"
-    echo -e "\n${CYAN}[?] Next: ${description}${NC}"
-    read -p "    Press Enter to run, or type 's' to skip: " _skip_input
-    [[ "$_skip_input" == "s" || "$_skip_input" == "S" ]]
 }
 
 # Log a section header
@@ -232,12 +230,12 @@ run_auth() {
     log_section "Authentication Tests | Target: $TARGET"
     echo -e "\n${GREEN}=== Running Authentication Tests ===${NC}"
     
-    ask_skip "Null Authentication" || nxcrun smb "$TARGET" -u '' -p ''
-    ask_skip "Guest Authentication" || nxcrun smb "$TARGET" -u 'guest' -p ''
+    nxcrun smb "$TARGET" -u '' -p ''
+    nxcrun smb "$TARGET" -u 'guest' -p ''
 
     if [ "$USERNAME" != "''" ]; then
-        ask_skip "Local Authentication" || nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED --local-auth
-        ask_skip "SMB Signing Check (gen-relay-list)" || nxcrun smb "$TARGET" --gen-relay-list "relay_${TARGET}.txt"
+        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED --local-auth
+        nxcrun smb "$TARGET" --gen-relay-list "relay_${TARGET}.txt"
     fi
 
     read -p "Press Enter to continue..."
@@ -352,10 +350,10 @@ run_basic_enum() {
     log_section "Basic Enumeration | Target: $TARGET"
     echo -e "\n${GREEN}=== Running Basic Enumeration ===${NC}"
     
-    ask_skip "Basic SMB Info" || nxcrun smb "$TARGET"
-    ask_skip "List Shares" || nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares
-    ask_skip "List Users" || nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --users
-    ask_skip "RID Brute Force" || nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute
+    nxcrun smb "$TARGET"
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --users
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --rid-brute
 
     read -p "Press Enter to continue..."
 }
@@ -481,6 +479,29 @@ run_cred_dump_advanced() {
     esac
     
     read -p "Press Enter to continue..."
+}
+
+# Auto version สำหรับ All-in-One — ไม่ขึ้นเมนู รันทุกอย่างเลย
+run_mapping_enum_auto() {
+    log_section "Advanced Mapping & Enumeration | Target: $TARGET"
+    echo -e "\n${GREEN}=== Advanced Mapping & Enumeration ===${NC}"
+
+    if [ "$USERNAME" == "''" ]; then
+        echo -e "${RED}[!] Need credentials for advanced enumeration${NC}"
+        return
+    fi
+
+    echo -e "\n${YELLOW}[*] Shares + Interfaces + Sessions + Disks:${NC}"
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares --interfaces --smb-sessions --disks
+
+    echo -e "\n${YELLOW}[*] Logged-on Users + Users + Groups + Local Groups:${NC}"
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --loggedon-users --users --groups --local-groups
+
+    echo -e "\n${YELLOW}[*] Password Policy + RID Brute:${NC}"
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --pass-pol --rid-brute
+
+    echo -e "\n${YELLOW}[*] RDP (qwinsta) + Processes (tasklist):${NC}"
+    nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --qwinsta --tasklist
 }
 
 # Function for advanced mapping/enumeration
@@ -631,15 +652,7 @@ run_mapping_enum() {
             nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --tasklist
             ;;
         12)
-            echo -e "\n${YELLOW}[*] All-in-One Enumeration:${NC}"
-            ask_skip "Shares + Interfaces + Sessions + Disks" || \
-                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --shares --interfaces --smb-sessions --disks
-            ask_skip "Logged-on Users + Users + Groups + Local Groups" || \
-                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --loggedon-users --users --groups --local-groups
-            ask_skip "Password Policy + RID Brute" || \
-                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --pass-pol --rid-brute
-            ask_skip "RDP (qwinsta) + Processes (tasklist)" || \
-                nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --qwinsta --tasklist
+            run_mapping_enum_auto
             ;;
         13)
             return
@@ -663,32 +676,29 @@ run_smb_enum() {
         return
     fi
     
-    ask_skip "All-in-One SMB Enumeration (groups/shares/sessions/pass-pol)" || \
+    \
         nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS --groups --local-groups --loggedon-users --sessions --shares --pass-pol
 
-    if ! ask_skip "Spider_plus Module"; then
-        echo -e "${CYAN}Spider_plus options (ใส่ค่าหรือกด Enter ใช้ค่า default):${NC}"
+    echo -e "${CYAN}Spider_plus options (ใส่ค่าหรือกด Enter ใช้ค่า default):${NC}"
+    read -p "Read-only? (Y/n): " read_only
+    read -p "Max depth (แนะนำ 2-3 ถ้าค้าง, Enter=ไม่จำกัด): " sp_depth
+    read -p "Max file size KB (Enter=51200): " sp_size
+    read -p "Exclude extensions (Enter=exe,dll,msi,iso,zip): " sp_exts
+    read -p "Timeout วินาที (Enter=ไม่จำกัด, แนะนำ 300): " sp_timeout
 
-        read -p "Read-only? (Y/n): " read_only
-        read -p "Max depth (default: no limit, แนะนำ 2-3 ถ้าค้าง): " sp_depth
-        read -p "Max file size in KB (default: 51200 = 50MB): " sp_size
-        read -p "Exclude extensions, คั่นด้วย comma (default: exe,dll,msi,iso,zip): " sp_exts
-        read -p "Timeout (วินาที, default: ไม่จำกัด, แนะนำ 300): " sp_timeout
+    sp_opts="READ_ONLY=true"
+    [[ "$read_only" == "n" || "$read_only" == "N" ]] && sp_opts="READ_ONLY=false"
+    [ -n "$sp_depth" ] && sp_opts="$sp_opts DEPTH=$sp_depth"
+    [ -n "$sp_size" ]  && sp_opts="$sp_opts MAX_FILE_SIZE=$(( sp_size * 1024 ))"
+    [ -n "$sp_exts" ]  && sp_opts="$sp_opts EXCLUDE_EXTENSIONS=$sp_exts"
+    [ -z "$sp_exts" ]  && sp_opts="$sp_opts EXCLUDE_EXTENSIONS=exe,dll,msi,iso,zip"
 
-        sp_opts="READ_ONLY=true"
-        [[ "$read_only" == "n" || "$read_only" == "N" ]] && sp_opts="READ_ONLY=false"
-        [ -n "$sp_depth" ]   && sp_opts="$sp_opts DEPTH=$sp_depth"
-        [ -n "$sp_size" ]    && sp_opts="$sp_opts MAX_FILE_SIZE=$(( sp_size * 1024 ))"
-        [ -n "$sp_exts" ]    && sp_opts="$sp_opts EXCLUDE_EXTENSIONS=$sp_exts"
-        [ -z "$sp_exts" ]    && sp_opts="$sp_opts EXCLUDE_EXTENSIONS=exe,dll,msi,iso,zip"
-
-        if [ -n "$sp_timeout" ]; then
-            timeout "$sp_timeout" bash -c \
-                "netexec smb \"$TARGET\" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus -o $sp_opts 2>&1 | tee -a \"$LOG_FILE\""
-            [ $? -eq 124 ] && echo -e "\n${YELLOW}[!] Spider_plus หมดเวลา ($sp_timeout วินาที) — ผลที่ได้อาจไม่ครบ${NC}"
-        else
-            nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus -o $sp_opts
-        fi
+    if [ -n "$sp_timeout" ]; then
+        timeout "$sp_timeout" bash -c \
+            "netexec smb \"$TARGET\" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus -o $sp_opts 2>&1 | tee -a \"$LOG_FILE\""
+        [ $? -eq 124 ] && echo -e "\n${YELLOW}[!] Spider_plus หมดเวลา ($sp_timeout วินาที)${NC}"
+    else
+        nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M spider_plus -o $sp_opts
     fi
 
     read -p "Press Enter to continue..."
@@ -706,103 +716,120 @@ run_ldap_enum() {
         return
     fi
     
-    ask_skip "LDAP All-in-One (trusted-delegation/password-not-required/admin-count/users/groups)" || \
+    \
         nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --trusted-for-delegation --password-not-required --admin-count --users --groups
 
-    ask_skip "Find Delegation Relationships" || \
+    \
         nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --find-delegation
 
-    ask_skip "Kerberoasting" || \
+    \
         nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --kerberoasting "kerberoast_${TARGET}.txt"
 
-    ask_skip "ASREProast" || \
+    \
         nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --asreproast "asreproast_${TARGET}.txt"
 
-    ask_skip "ADCS Enumeration" || \
+    \
         nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS -M adcs
 
-    ask_skip "MachineAccountQuota" || \
+    \
         nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS -M maq
 
-    ask_skip "gMSA (Group Managed Service Accounts)" || \
+    \
         nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS --gmsa
 
     read -p "Press Enter to continue..."
 }
 
+# Helper: ldapsearch พร้อม tombstone control (1.2.840.113556.1.4.417)
+# netexec ไม่รองรับ --tombstone → ต้องใช้ ldapsearch โดยตรง
+_tombstone_search() {
+    local label="$1"
+    local filter="$2"
+    local extra_attrs="${3:-}"
+
+    # ตรวจว่ามี ldapsearch
+    if ! command -v ldapsearch &>/dev/null; then
+        echo -e "${RED}[!] ไม่พบ ldapsearch — ติดตั้งด้วย: apt install ldap-utils${NC}"
+        return 1
+    fi
+
+    # สร้าง Base DN จาก DOMAIN
+    local base_dn
+    if [ -n "$DOMAIN" ]; then
+        base_dn=$(echo "$DOMAIN" | awk -F'.' '{
+            for(i=1;i<=NF;i++) printf "DC=" $i (i<NF ? "," : ""); print ""}')
+    else
+        read -p "Base DN (e.g. DC=domain,DC=com): " base_dn
+        [ -z "$base_dn" ] && return 1
+    fi
+
+    # auth options
+    local auth_opts
+    if [ -n "$HASH" ]; then
+        echo -e "${YELLOW}[!] Tombstone ไม่รองรับ NTLM hash — ข้ามไป${NC}"
+        return 1
+    elif [ -n "$PASSWORD" ] && [ "$USERNAME" != "''" ]; then
+        auth_opts="-D \"${USERNAME}@${DOMAIN}\" -w \"${PASSWORD}\""
+    else
+        auth_opts="-x"
+    fi
+
+    local attrs="sAMAccountName distinguishedName lastKnownParent whenChanged isDeleted $extra_attrs"
+    local cmd="ldapsearch -H ldap://$TARGET -x $auth_opts \
+        -b \"$base_dn\" \
+        -E 1.2.840.113556.1.4.417 \
+        \"$filter\" $attrs 2>&1"
+
+    echo -e "\n${YELLOW}[*] $label${NC}"
+    echo "" >> "$LOG_FILE"
+    echo "[$(date '+%H:%M:%S')] TOMBSTONE: $filter" >> "$LOG_FILE"
+    eval "$cmd" | tee -a "$LOG_FILE"
+}
+
 # Auto tombstone — รันทุก type โดยไม่มีเมนู (ใช้ใน All-in-One)
 run_tombstone_auto() {
-    local ts_attrs="sAMAccountName,distinguishedName,lastKnownParent,whenChanged,isDeleted"
     log_section "Tombstone (Deleted Objects) | Target: $TARGET"
 
-    ask_skip "Tombstone — Deleted Users" || \
-        nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-            --query "(&(isDeleted=TRUE)(objectClass=user))" "$ts_attrs" --tombstone
+    \
+        _tombstone_search "Deleted Users" "(&(isDeleted=TRUE)(objectClass=user))"
 
-    ask_skip "Tombstone — Deleted Computers" || \
-        nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-            --query "(&(isDeleted=TRUE)(objectClass=computer))" "$ts_attrs" --tombstone
+    \
+        _tombstone_search "Deleted Computers" "(&(isDeleted=TRUE)(objectClass=computer))"
 
-    ask_skip "Tombstone — Deleted Groups" || \
-        nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-            --query "(&(isDeleted=TRUE)(objectClass=group))" "$ts_attrs" --tombstone
+    \
+        _tombstone_search "Deleted Groups" "(&(isDeleted=TRUE)(objectClass=group))"
 }
 
 # Function to query tombstone (deleted AD objects) — interactive menu
 run_tombstone() {
     log_section "Tombstone (Deleted Objects) | Target: $TARGET"
     echo -e "\n${GREEN}=== Tombstone — Deleted AD Objects ===${NC}"
-    echo -e "${CYAN}[i] ดึง object ที่ถูกลบแต่ยังอยู่ใน tombstone window (default 180 วัน)${NC}\n"
+    echo -e "${CYAN}[i] ดึง object ที่ถูกลบแต่ยังอยู่ใน tombstone window (default 180 วัน)${NC}"
+    echo -e "${CYAN}[i] ใช้ ldapsearch + LDAP control 1.2.840.113556.1.4.417${NC}\n"
 
     echo "Select tombstone query:"
     echo "1) 🪦 Deleted Users ทั้งหมด"
     echo "2) 🖥️  Deleted Computers ทั้งหมด"
     echo "3) 👥 Deleted Groups ทั้งหมด"
     echo "4) 🔍 Deleted Objects ทั้งหมด (ทุก objectClass)"
-    echo "5) 🔎 Custom filter + tombstone"
+    echo "5) 🔎 Custom filter"
     echo "6) 🔄 รันทั้งหมด (Users + Computers + Groups)"
     echo "7) 🔙 Back"
     read -p "Choice [1-7]: " ts_choice
 
-    local ts_attrs="sAMAccountName,distinguishedName,lastKnownParent,whenChanged,isDeleted"
-
     case $ts_choice in
-        1)
-            echo -e "\n${YELLOW}[*] Querying deleted users:${NC}"
-            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-                --query "(&(isDeleted=TRUE)(objectClass=user))" "$ts_attrs" --tombstone
-            ;;
-        2)
-            echo -e "\n${YELLOW}[*] Querying deleted computers:${NC}"
-            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-                --query "(&(isDeleted=TRUE)(objectClass=computer))" "$ts_attrs" --tombstone
-            ;;
-        3)
-            echo -e "\n${YELLOW}[*] Querying deleted groups:${NC}"
-            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-                --query "(&(isDeleted=TRUE)(objectClass=group))" "$ts_attrs" --tombstone
-            ;;
-        4)
-            echo -e "\n${YELLOW}[*] Querying all deleted objects:${NC}"
-            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-                --query "(isDeleted=TRUE)" "$ts_attrs" --tombstone
-            ;;
+        1) _tombstone_search "Deleted Users"     "(&(isDeleted=TRUE)(objectClass=user))" ;;
+        2) _tombstone_search "Deleted Computers" "(&(isDeleted=TRUE)(objectClass=computer))" ;;
+        3) _tombstone_search "Deleted Groups"    "(&(isDeleted=TRUE)(objectClass=group))" ;;
+        4) _tombstone_search "All Deleted Objects" "(isDeleted=TRUE)" ;;
         5)
             echo -e "${CYAN}Example: (&(isDeleted=TRUE)(sAMAccountName=admin*))${NC}"
-            read -p "Enter LDAP filter (isDeleted=TRUE จะถูกใส่ให้อัตโนมัติถ้าไม่ใส่): " ts_filter
-            read -p "Enter attributes (default: $ts_attrs): " ts_custom_attrs
-            [ -z "$ts_custom_attrs" ] && ts_custom_attrs="$ts_attrs"
+            read -p "Enter LDAP filter: " ts_filter
             [[ "$ts_filter" != *"isDeleted"* ]] && ts_filter="(&(isDeleted=TRUE)${ts_filter})"
-            echo -e "\n${YELLOW}[*] Running tombstone query: $ts_filter${NC}"
-            nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-                --query "$ts_filter" "$ts_custom_attrs" --tombstone
+            _tombstone_search "Custom: $ts_filter" "$ts_filter"
             ;;
-        6)
-            run_tombstone_auto
-            ;;
-        7)
-            return
-            ;;
+        6) run_tombstone_auto ;;
+        7) return ;;
         *)
             echo -e "${RED}Invalid choice${NC}"
             ;;
@@ -983,13 +1010,11 @@ run_mssql_enum() {
         return
     fi
     
-    ask_skip "MSSQL Authentication" || \
+    \
         nxcrun mssql "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH
 
-    if ! ask_skip "xp_cmdshell — Execute Command"; then
-        read -p "Enter command to execute: " cmd
-        [ -n "$cmd" ] && nxcrun mssql "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH -x "$cmd"
-    fi
+    read -p "Enter command to execute via xp_cmdshell (Enter to skip): " cmd
+    [ -n "$cmd" ] && nxcrun mssql "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH -x "$cmd"
 
     read -p "Press Enter to continue..."
 }
@@ -1005,13 +1030,10 @@ run_ftp_enum() {
         return
     fi
     
-    ask_skip "FTP Directory Listing (root)" || \
-        nxcrun ftp "$TARGET" $USER_OPT $AUTH_CRED --ls
+    nxcrun ftp "$TARGET" $USER_OPT $AUTH_CRED --ls
 
-    if ! ask_skip "FTP Specific Directory Listing"; then
-        read -p "Enter directory path: " ftp_dir
-        [ -n "$ftp_dir" ] && nxcrun ftp "$TARGET" $USER_OPT $AUTH_CRED --ls "$ftp_dir"
-    fi
+    read -p "Enter specific directory to list (Enter to skip): " ftp_dir
+    [ -n "$ftp_dir" ] && nxcrun ftp "$TARGET" $USER_OPT $AUTH_CRED --ls "$ftp_dir"
 
     read -p "Press Enter to continue..."
 }
@@ -1039,11 +1061,11 @@ run_vuln_check() {
             nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M nopac
             ;;
         4)
-            ask_skip "Zerologon" || \
+            \
                 nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M zerologon
-            ask_skip "PetitPotam" || \
+            \
                 nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M petitpotam
-            ask_skip "NoPac" || \
+            \
                 nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M nopac
             ;;
     esac
@@ -1089,11 +1111,11 @@ run_modules() {
             nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M enum_av
             ;;
         6)
-            ask_skip "WebDAV" || \
+            \
                 nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M webdav
-            ask_skip "Veeam" || \
+            \
                 nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M veeam
-            ask_skip "Enum_AV" || \
+            \
                 nxcrun smb "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $LOCAL_AUTH $KERBEROS -M enum_av
             ;;
     esac
@@ -1133,30 +1155,46 @@ run_all() {
     echo -e "${RED}[!] This will take a very long time...${NC}"
     echo -e "${YELLOW}[!] Make sure you have proper authorization${NC}"
     
-    ask_skip "Authentication Tests" || run_auth
-    ask_skip "Basic Enumeration" || run_basic_enum
+    # helper: รัน function แล้วเช็ค _STOP_ALL ถ้า set → run bloodhound แล้วออก
+    _run_step() {
+        [ $_STOP_ALL -eq 1 ] && return 1
+        "$@"
+        [ $_STOP_ALL -eq 1 ] && return 1
+        return 0
+    }
+
+    _STOP_ALL=0
+
+    _run_step run_auth          || { _finish_with_bh; return; }
+    _run_step run_basic_enum    || { _finish_with_bh; return; }
 
     if [ "$USERNAME" != "''" ]; then
-        ask_skip "SMB Enumeration" || run_smb_enum
-        ask_skip "LDAP Enumeration" || run_ldap_enum
-        ask_skip "Credential Dumping (Advanced)" || run_cred_dump_advanced
-        ask_skip "Vulnerability Checking" || run_vuln_check
-        ask_skip "Useful Modules" || run_modules
-        ask_skip "gMSA Operations" || run_gmsa_ops
-        ask_skip "Advanced LDAP Queries" || run_advanced_ldap
-        ask_skip "Tombstone — Deleted AD Objects (Users/Computers/Groups)" || run_tombstone_auto
-        ask_skip "Advanced Mapping & Enumeration" || run_mapping_enum
-        ask_skip "Hash Checking" || run_hash_check
-        ask_skip "Generate Hosts / Export Users & Computers" || run_export
+        _run_step run_smb_enum          || { _finish_with_bh; return; }
+        _run_step run_ldap_enum         || { _finish_with_bh; return; }
+        _run_step run_cred_dump_advanced || { _finish_with_bh; return; }
+        _run_step run_vuln_check        || { _finish_with_bh; return; }
+        _run_step run_modules           || { _finish_with_bh; return; }
+        _run_step run_gmsa_ops          || { _finish_with_bh; return; }
+        _run_step run_advanced_ldap     || { _finish_with_bh; return; }
+        _run_step run_tombstone_auto    || { _finish_with_bh; return; }
+        _run_step run_hash_check        || { _finish_with_bh; return; }
+        _run_step run_export            || { _finish_with_bh; return; }
+        _finish_with_bh
+        [ $_STOP_ALL -eq 1 ] && return
+        _run_step run_mapping_enum_auto || { return; }
     fi
 
     echo -e "\n${GREEN}[+] All enumeration completed!${NC}"
+    read -p "Press Enter to continue..."
+}
+
+# รัน BloodHound หลังจบ (ใช้ทั้งใน run_all ปกติและกรณี q)
+_finish_with_bh() {
     echo -e "\n${PURPLE}════════════════════════════════════════${NC}"
     echo -e "${PURPLE}  🩸 Running BloodHound Collection...${NC}"
     echo -e "${PURPLE}════════════════════════════════════════${NC}"
+    _STOP_ALL=0
     run_bloodhound
-
-    read -p "Press Enter to continue..."
 }
 
 # Function to change target/credentials
