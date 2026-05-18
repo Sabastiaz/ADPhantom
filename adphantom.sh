@@ -76,7 +76,6 @@ log_section() {
 
 # Function to print banner
 print_banner() {
-    clear
     echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║     ADPhantom Ultimate Tool        ║${NC}"
     echo -e "${BLUE}║     Credential & Enumeration Master   ║${NC}"
