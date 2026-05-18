@@ -1,10 +1,6 @@
-# ADPhantom — NetExec Ultimate Interactive Tool
-
+# 🔐 ADPhantom — NetExec Ultimate Interactive Tool
 
 > An interactive Bash wrapper for [NetExec (nxc)](https://github.com/Pennyw0rth/NetExec) — designed to streamline credential gathering and network enumeration during red team engagements and penetration tests.
-
-<img width="1402" height="1122" alt="ADPhantom2" src="https://github.com/user-attachments/assets/fc904cc5-905e-4cdc-a709-853928b53395" />
-
 
 ![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Version](https://img.shields.io/badge/Version-4.1-blue?style=for-the-badge)
@@ -179,7 +175,7 @@ ADPhantom/
 
 **Sabastiaz** — Red Team Sorcerer
 - GitHub: [@sabastiaz](https://github.com/sabastiaz)
-- Blog: https://sabastiaz.github.io/writings.html
+- Blog: [medium.com/@sabastiaz](https://medium.com/@sabastiaz)
 
 ---
 
