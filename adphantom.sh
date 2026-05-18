@@ -1197,31 +1197,35 @@ run_bloodhound() {
         *) echo -e "${RED}Invalid choice${NC}"; read -p "Press Enter..."; return ;;
     esac
 
-    local bh_out="$LOG_DIR/bloodhound_${TARGET}_${TIMESTAMP}"
-    mkdir -p "$bh_out"
+    # ใช้ TARGET เป็น DNS server เพื่อ resolve DC name ได้เสมอ
+    local bh_dns="--dns-server $TARGET --dns-tcp"
+    local zip_path="$LOG_DIR/bloodhound_${TARGET}_${TIMESTAMP}.zip"
+    local before_ts
+    before_ts=$(date +%s)
 
     echo -e "\n${YELLOW}[*] Collecting BloodHound data (method: $bh_collection)...${NC}"
     nxcrun ldap "$TARGET" $USER_OPT $AUTH_CRED $DOMAIN_OPTION $KERBEROS \
-        --bloodhound --collection "$bh_collection" --dns-tcp
+        --bloodhound --collection "$bh_collection" $bh_dns
 
-    # zip ไฟล์ json ทั้งหมดที่ netexec สร้างใน working dir
-    local json_files
-    json_files=$(find . -maxdepth 1 -name "*.json" -newer "$LOG_FILE" 2>/dev/null)
-    if [ -n "$json_files" ]; then
-        local zip_path="$LOG_DIR/bloodhound_${TARGET}_${TIMESTAMP}.zip"
-        echo "$json_files" | xargs zip -j "$zip_path" 2>/dev/null
-        echo "$json_files" | xargs rm -f 2>/dev/null
+    # ค้นหา output ใน working dir, ~/.nxc/, และ /tmp
+    local found_zip found_jsons
+    found_zip=$(find . "$HOME/.nxc" /tmp -maxdepth 3 \
+        \( -name "*.zip" -o -name "*bloodhound*.zip" \) \
+        -newer "$LOG_FILE" 2>/dev/null | head -1)
+
+    found_jsons=$(find . "$HOME/.nxc" /tmp -maxdepth 3 \
+        -name "*.json" -newer "$LOG_FILE" 2>/dev/null)
+
+    if [ -n "$found_zip" ]; then
+        cp "$found_zip" "$zip_path" 2>/dev/null
+        echo -e "${GREEN}[+] BloodHound ZIP: ${CYAN}$zip_path${NC}"
+    elif [ -n "$found_jsons" ]; then
+        echo "$found_jsons" | tr '\n' '\0' | xargs -0 zip -j "$zip_path" 2>/dev/null
+        echo "$found_jsons" | tr '\n' '\0' | xargs -0 rm -f 2>/dev/null
         echo -e "${GREEN}[+] BloodHound ZIP: ${CYAN}$zip_path${NC}"
     else
-        # netexec บางเวอร์ชัน zip ให้เลย
-        local existing_zip
-        existing_zip=$(find . -maxdepth 1 -name "*bloodhound*.zip" -newer "$LOG_FILE" 2>/dev/null | head -1)
-        if [ -n "$existing_zip" ]; then
-            mv "$existing_zip" "$LOG_DIR/"
-            echo -e "${GREEN}[+] BloodHound ZIP: ${CYAN}$LOG_DIR/$(basename "$existing_zip")${NC}"
-        else
-            echo -e "${YELLOW}[!] ไม่พบไฟล์ output — ตรวจสอบ netexec version หรือ permissions${NC}"
-        fi
+        echo -e "${YELLOW}[!] ไม่พบไฟล์ output${NC}"
+        echo -e "${CYAN}[i] ลองตรวจสอบ: ls ~/.nxc/ หรือ ls \$(pwd)${NC}"
     fi
 
     read -p "Press Enter to continue..."
