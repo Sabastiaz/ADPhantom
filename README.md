@@ -3,7 +3,7 @@
 > An interactive Bash wrapper for [NetExec (nxc)](https://github.com/Pennyw0rth/NetExec) — designed to streamline credential gathering and network enumeration during red team engagements and penetration tests.
 
 ![Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
-![Version](https://img.shields.io/badge/Version-4.1-blue?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-4.2-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey?style=for-the-badge)
 
@@ -19,25 +19,38 @@
 
 ## ✨ Features
 
-| Module | Description |
-|---|---|
-| 🔐 Authentication Tests | Null, Guest, Local, SMB Signing Check |
-| 📋 Basic Enumeration | SMB Info, Shares, Users, RID Brute |
-| 📁 SMB Enumeration | Shares, directories, sessions, disks |
-| 👥 LDAP Enumeration | Users, groups, computers, domain info |
-| 🗄️ MSSQL Enumeration | DB enumeration and query execution |
-| 📂 FTP Enumeration | FTP access and file listing |
-| 💀 Credential Dumping | SAM, LSA, NTDS, DPAPI, SCCM |
-| 🔓 Vulnerability Checking | EternalBlue, PrintNightmare, ZeroLogon, etc. |
-| 🛠️ Useful Modules | BloodHound, Mimikatz, PowerShell, WMI |
-| 🔑 Password Spraying | Single/list-based spraying with lockout safety |
-| 🗺️ Advanced Mapping | Network interfaces, logged users, processes |
-| 🎯 All-in-One | Run all enumeration at once |
-| 🔑🔐 gMSA Operations | Read gMSA passwords |
-| 🔍 Advanced LDAP | ASREPRoast, Kerberoast, ACL, GPO |
-| 🧪 Hash Checking | NTLM, NetNTLMv1, NetNTLMv2 from single or file |
-| 📝 Session Logging | Auto-save all command output to log file |
-| 📊 Auto Report | Generate `.txt` and `.html` report on exit |
+| # | Module | Description |
+|---|---|---|
+| 1 | 🔐 Authentication Tests | Null, Guest, Local auth, SMB Signing check |
+| 2 | 📋 Basic Enumeration | SMB Info, Shares, Users, RID Brute |
+| 3 | 📁 SMB Enumeration | Shares, spider_plus (depth/size/timeout control) |
+| 4 | 👥 LDAP Enumeration | Users, groups, Kerberoast, ASREPRoast, ADCS, gMSA |
+| 5 | 🗄️ MSSQL Enumeration | DB enumeration and xp_cmdshell execution |
+| 6 | 📂 FTP Enumeration | FTP access and directory listing |
+| 7 | 💀 Credential Dumping | SAM, LSA, NTDS (drsuapi/vss), DPAPI, SCCM |
+| 8 | 🔓 Vulnerability Checking | Zerologon, PetitPotam, NoPac |
+| 9 | 🛠️ Useful Modules | WebDAV, Veeam, Slinky, Coerce_plus, Enum_AV |
+| 10 | 🔑 Password Spraying | Single/list-based spraying with lockout safety |
+| 11 | 🗺️ Advanced Mapping | Interfaces, sessions, disks, processes, RDP |
+| 12 | 🎯 All-in-One | Run everything with per-step skip prompts |
+| 13 | ⚙️ Change Target/Creds | Switch target or credentials mid-session |
+| 14 | 🔑🔐 gMSA Operations | List, convert ID, decrypt LSA |
+| 15 | 🔍 Advanced LDAP Queries | Delegation, ACL, custom filter, tombstone |
+| 16 | 🧪 Hash Checking | NTLM, NetNTLMv1, NetNTLMv2 — single or file |
+| 17 | 🩸 BloodHound Collection | LDAP collection → auto-ZIP (All/DCOnly/Custom) |
+| 18 | 📤 Generate Hosts / Export | Relay host list, users export, computers export |
+| — | 🪦 Tombstone Queries | Query deleted AD objects (users/computers/groups) |
+| — | 📝 Session Logging | Auto-save all output per session |
+| — | 📊 Auto Report | `.txt` + dark-theme `.html` report on exit |
+
+### 🆕 v4.2 Highlights
+
+- **Per-step skip system** — กด `s` ก่อนทุก command เพื่อข้ามได้ทันที
+- **Ctrl+C handler** — interrupt command แล้วเลือก retry / skip / quit แทนปิด script ทันที
+- **Spider_plus options** — ควบคุม depth, file size, exclude extensions, timeout
+- **Tombstone** — query deleted AD objects ด้วย `--tombstone` control
+- **BloodHound ZIP** — collect และ zip output ไว้ใน `reports/` อัตโนมัติ
+- **Generate Hosts / Export** — relay list, users, computers ออก TXT ใน `reports/`
 
 ---
 
@@ -48,9 +61,13 @@ When you exit (option `0`), a full report is generated instantly.
 
 ```
 reports/
-├── session_20260418_200000.log     ← raw output log
-├── report_20260418_200000.txt      ← plain text summary
-└── report_20260418_200000.html     ← dark-theme HTML report
+├── session_20260418_200000.log          ← raw output log
+├── report_20260418_200000.txt           ← plain text summary
+├── report_20260418_200000.html          ← dark-theme HTML report
+├── bloodhound_192.168.1.10_*.zip        ← BloodHound collection ZIP
+├── hosts_192.168.1.10_*.txt             ← relay host list
+├── users_192.168.1.10_*.txt             ← exported domain users
+└── computers_192.168.1.10_*.txt         ← exported domain computers
 ```
 
 The HTML report includes:
@@ -125,6 +142,8 @@ Username: administrator
 14) 🔑🔐 gMSA Operations
 15) 🔍 Advanced LDAP Queries
 16) 🧪 Hash Checking (NTLM/NetNTLM)
+17) 🩸 BloodHound Collection (ZIP)
+18) 📤 Generate Hosts / Export Users
  0) ❌ Exit → Generate Report
 ```
 
